@@ -1,0 +1,105 @@
+# my aaphub — By Prince Raj
+
+A Play Store-inspired APK catalogue with a Node.js/Express backend, SQLite database, user registration/login with email verification, ratings/reviews, download tracking, developer APK submissions, email notifications, report moderation, account deletion, optional ClamAV scanning, and admin approval before apps go live.
+
+### App logo uploads
+
+In Admin → Upload a new app, choose an image file (PNG, JPG, WEBP or GIF, up to 8 MB) in the **App logo picture** field. The form shows a circular preview, uploads the image to `/uploads/images/`, and saves the resulting URL with the app. App icons are displayed with a circular crop (`object-fit: cover`). You no longer need to host the logo elsewhere or paste a screenshot URL for the app icon. Screenshot gallery URLs remain a separate optional field.
+
+## Requirements
+- Node.js 18 or newer and npm
+- A computer or Android device capable of running Node.js. For Android-only testing, Termux can run Node.js, but installing `better-sqlite3` may require build tools; a cloud Node.js host is easier for public deployment.
+
+## Quick start (computer or Node.js host)
+1. Install Node.js 18+.
+2. Open a terminal in this project folder.
+3. Run `npm install`.
+4. Copy `.env.example` to `.env` and set a long random `JWT_SECRET`, `ADMIN_EMAIL`, and strong `ADMIN_PASSWORD`.
+5. Configure SMTP settings and `APP_BASE_URL` in `.env` to send verification and notification emails (see below).
+6. Run `npm start`.
+7. Open `http://localhost:3000` in a browser.
+
+The first startup creates the admin account using `ADMIN_EMAIL` and `ADMIN_PASSWORD` if the email does not already exist. New user registration requires email verification by default (`REQUIRE_EMAIL_VERIFICATION=true`); configure SMTP and set `APP_BASE_URL` to the public HTTPS website URL before public launch. Set `ADMIN_EMAIL=8325460@gmail.com` if that is the inbox you want notified. If that email already exists, its role is promoted to admin; its password is not reset.
+
+## Android phone quick start (Termux)
+1. Install Termux from its official F-Droid/GitHub source.
+2. Copy/extract this project into Termux storage. Use `termux-setup-storage` if needed.
+3. Install Node.js and build tools with `pkg update && pkg install nodejs-lts python make clang`.
+4. `cd` into the project folder and run `npm install` (native SQLite module installation can fail on some phone/Node combinations).
+5. Create `.env` from `.env.example`, change all secrets, then run `npm start`.
+6. Visit `http://127.0.0.1:3000` on the same phone.
+
+## Email and approval workflow
+- Registration sends a verification link that expires after 24 hours. The user must verify their email before signing in when `REQUIRE_EMAIL_VERIFICATION=true`. A resend-verification endpoint is available.
+- Forgot-password flow sends a 6-digit email code, expires after 10 minutes, and permits one use.
+- Signed-in users can report apps; admins can mark reports reviewed or dismiss them. Non-admin users can request account deletion from their account menu.
+- APK uploads are checked for a ZIP/APK container signature. Optional ClamAV scanning can be enabled with `CLAMSCAN_ENABLED=true` on a host where ClamAV is installed; signature checks alone do not detect malware.
+- Signed-in users choose **Publish an app** and upload an APK.
+- The submission stays private and is not listed in the public catalogue until an admin approves it.
+- Admin receives an email with the submitter's account email and app metadata. APK files up to `MAIL_ATTACHMENT_MAX_MB` are attached; larger files are available via the authenticated Admin panel.
+- The user receives a receipt email, then another email after approval/rejection.
+- Email delivery requires valid SMTP settings. For Gmail, use `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`, `SMTP_SECURE=false`, `SMTP_USER=8325460@gmail.com`, and a Google App Password in `SMTP_PASS`. Do not use your normal Gmail password. Enable 2-Step Verification to create an App Password. Email won't send until these are configured.
+- Approval endpoints: `GET /api/admin/submissions`, `GET /api/admin/submissions/:id/apk`, and `POST /api/admin/submissions/:id/review` with `{decision:"approve"|"reject",note:"..."}`.
+
+## API overview
+- `GET /api/health`
+- `POST /api/auth/register` `{name,email,password}`
+- `POST /api/auth/login` `{email,password}`
+- `GET /api/auth/verify-email?token=...` (verification link target)
+- `POST /api/auth/resend-verification` `{email}`
+- `DELETE /api/account` (authenticated account deletion)
+- `POST /api/apps/:id/report` `{reason,details}` (authenticated)
+- `GET /api/admin/reports` and `PATCH /api/admin/reports/:id` (admin only)
+- `GET /api/auth/me` (Bearer token)
+- `GET /api/apps?q=&category=&sort=popular|rating|new`
+- `GET /api/apps/:id`
+- `GET /api/apps/:id/download`
+- `POST /api/apps/:id/reviews` (Bearer token; `{rating:1..5,comment}`)
+- `POST /api/admin/apps` multipart form including `apk` (admin only)
+- `POST /api/admin/images` multipart `images` (admin only)
+- `PATCH /api/admin/apps/:id` (admin only)
+- `DELETE /api/admin/apps/:id` (admin only)
+- `GET /api/admin/stats` (admin only)
+
+## Important limitations / production checklist
+- This is a working starter, not a fully audited production marketplace.
+- Email verification and one-time-code password reset are implemented (SMTP required). App signing/package validation, developer payouts, push notifications, app version history/auto-update, admin 2FA, and Google Play billing are not implemented. Email OTP needs a real email provider and additional backend routes.
+- APK extension, ZIP signature, and upload-size checks are not a malware scan. Optional ClamAV scanning requires a compatible server installation. Review every upload; only distribute apps you own or have permission to distribute.
+- For production use HTTPS, a strong unique `JWT_SECRET`, secrets stored in host environment variables, persistent disk or object storage, backups, upload quotas, virus scanning, admin 2FA, legal review of the sample privacy/terms text, and a security audit. Do not expose this server directly without these safeguards.
+- Uploaded screenshots are currently provided as HTTPS URLs in the form. The backend also exposes an admin image-upload endpoint.
+- Download count increments when the download endpoint is requested; interrupted downloads can still be counted.
+
+
+Version 1.1.4: screenshot uploads now use a Gallery/file picker (up to 8 images) in both Publish an app and Admin upload. URL-based screenshot entry has been removed. Selected screenshots show previews before upload. Responsive UI polish for mobile and desktop.
+
+
+## APK picker update (v1.1.5)
+The frontend APK input accepts all MIME types (`accept="*/*"`) so Android's system picker is less likely to hide APK files. Users can navigate to any folder exposed by Android's picker. The UI checks that the selected filename ends in `.apk`. The backend/server is unchanged.
+
+
+## APK selection on Android
+The APK input uses APK-specific extensions and MIME hints so compatible Android file pickers can filter APK files. Tap Choose file, then use Browse or open the folder where the APK was saved. A web page cannot force a particular file-manager app or scan all device folders without user selection.
+
+
+## APK picker compatibility (v1.1.7)
+The browser file input accepts all types so Android document providers can return selected APKs. The client no longer clears a file based on the provider MIME/display metadata. The existing server still validates the uploaded filename extension and ZIP/APK signature.
+
+
+## Version 1.1.9 updates
+- Added a **My hosted apps** count for the signed-in developer.
+- Developers can replace the APK and version of apps approved from their own account.
+- Email delivery still requires valid SMTP credentials in `.env`; for Gmail use a Google App Password, not the normal Gmail password.
+
+
+## Version 1.2.0 updates
+- Added a full-screen My hosted apps management page.
+- Developers can update the APK/version, delete their own published app, and start a new app submission from the same page.
+- Admin panel now fills the full screen on mobile and desktop.
+- Admin email and Gmail SMTP example remain set to `8325460@gmail.com`; actual email delivery requires a real Google App Password and a public `APP_BASE_URL`.
+
+
+## Version 1.2.1 changes
+- New user submissions send an approval-request email to `ADMIN_EMAIL` (default `8325460@gmail.com`) and stay private until an admin approves them. Rejected submissions are never published.
+- Admin can delete pending or rejected submissions and their uploaded APK files.
+- Developers can update the APK/version for their own approved apps. Deleting a hosted app now requires a one-time six-digit code emailed to the signed-in account email; codes expire after 10 minutes and allow at most five attempts.
+- Email notifications require working SMTP settings in `.env`; a local `localhost` URL is not a public verification link.
